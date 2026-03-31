@@ -1,0 +1,5 @@
+{
+  "name": "BackForge BaaS",
+  "description": "A high-performance Backend-as-a-Service platform with dynamic API generation, multi-tenancy, and usage analytics.",
+  "requestFramePermissions": []
+}

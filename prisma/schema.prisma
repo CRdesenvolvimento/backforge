@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  DEVELOPER
+}
+
+model User {
+  id                   String         @id @default(uuid())
+  email                String         @unique
+  password             String
+  name                 String?
+  growthEvents         GrowthEvent[]
+  memberships          Membership[]
+  sessions             Session[]
+  webhookEvents        StripeWebhookEvent[]
+  billingSubscriptions Subscription[] @relation("BillingSubscriptions")
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@map("users")
+}
+
+model Project {
+  id           String          @id @default(uuid())
+  name         String
+  slug         String          @unique
+  growthEvents GrowthEvent[]
+  memberships  Membership[]
+  apiKeys      ApiKey[]
+  requestLogs  RequestLog[]
+  tables       DatabaseTable[]
+  subscription Subscription?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("projects")
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  role      Role     @default(DEVELOPER)
+  userId    String
+  projectId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, projectId])
+  @@map("memberships")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  token        String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  isRevoked    Boolean  @default(false)
+  replacedBy   String?  
+  createdAt    DateTime @default(now())
+
+  @@map("sessions")
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  name      String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@map("api_keys")
+}
+
+model RequestLog {
+  id        String   @id @default(uuid())
+  projectId String
+  path      String
+  method    String
+  status    Int
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("request_logs")
+}
+
+model DatabaseTable {
+  id        String           @id @default(uuid())
+  name      String
+  projectId String
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  columns   DatabaseColumn[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([projectId, name])
+  @@map("database_tables")
+}
+
+model DatabaseColumn {
+  id        String        @id @default(uuid())
+  name      String
+  type      String        
+  required  Boolean       @default(false)
+  tableId   String
+  table     DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@map("database_columns")
+}
+
+model Subscription {
+  id                   String    @id @default(uuid())
+  plan                 String    @default("free")
+  status               String    @default("active")
+  requestsLimit        Int       @default(1000)
+  requestsUsed         Int       @default(0)
+  rateLimitPerMinute   Int       @default(60)
+  billingUserId        String?
+  billingUser          User?     @relation("BillingSubscriptions", fields: [billingUserId], references: [id], onDelete: SetNull)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  currentPeriodStart   DateTime  @default(now())
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  projectId            String    @unique
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@map("subscriptions")
+}
+
+model StripeWebhookEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  type        String
+  status      String   @default("processing")
+  attempts    Int      @default(1)
+  payload     Json?
+  lastError   String?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type, status])
+  @@map("stripe_webhook_events")
+}
+
+model GrowthEvent {
+  id         String   @id @default(uuid())
+  name       String
+  sessionId  String?
+  path       String?
+  metadata   Json?
+  userId     String?
+  projectId  String?
+  occurredAt DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([name, occurredAt])
+  @@index([sessionId, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([projectId, occurredAt])
+  @@map("growth_events")
+}

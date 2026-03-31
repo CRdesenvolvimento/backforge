@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backforge-api
+  labels:
+    app.kubernetes.io/name: backforge-api
+    app.kubernetes.io/part-of: backforge
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: backforge-api.rules
+      rules:
+        - alert: BackforgeHigh5xxRate
+          expr: |
+            (
+              sum(rate(backforge_http_requests_total{service="backforge",process_type=~"api.*",status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(backforge_http_requests_total{service="backforge",process_type=~"api.*"}[5m])), 1)
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: BACKFORGE API 5xx rate is elevated
+            description: More than 5% of API requests are returning 5xx responses over the last 10 minutes.
+        - alert: BackforgeHighLatencyP95
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum(rate(backforge_http_request_duration_seconds_bucket{service="backforge",process_type=~"api.*"}[5m])) by (le)
+            ) > 0.75
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: BACKFORGE API latency p95 is high
+            description: The p95 latency has been above 750ms for more than 10 minutes.
+        - alert: BackforgeRedisDisconnected
+          expr: avg(backforge_redis_connectivity_state{service="backforge"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: BACKFORGE lost Redis connectivity
+            description: Redis connectivity has been unhealthy for more than 5 minutes.

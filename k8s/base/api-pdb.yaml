@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backforge-api
+  labels:
+    app.kubernetes.io/name: backforge-api
+    app.kubernetes.io/part-of: backforge
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backforge-api

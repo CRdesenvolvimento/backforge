@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backforge-worker
+  labels:
+    app.kubernetes.io/name: backforge-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: backforge
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backforge-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backforge-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: backforge
+      annotations:
+        backforge.io/release-sha: latest
+    spec:
+      serviceAccountName: backforge-runtime
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: ghcr.io/backforge/backforge:latest
+          imagePullPolicy: Always
+          command:
+            - node
+            - dist/server/queues/worker.js
+          env:
+            - name: PROCESS_TYPE
+              value: worker
+          envFrom:
+            - configMapRef:
+                name: backforge-config
+            - secretRef:
+                name: backforge-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000

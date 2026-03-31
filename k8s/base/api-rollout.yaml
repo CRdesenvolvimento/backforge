@@ -1,0 +1,126 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: backforge-api
+  labels:
+    app.kubernetes.io/name: backforge-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: backforge
+spec:
+  replicas: 3
+  minReadySeconds: 15
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backforge-api
+  strategy:
+    canary:
+      stableService: backforge-api
+      canaryService: backforge-api-canary
+      trafficRouting:
+        nginx:
+          stableIngress: backforge-api
+      analysis:
+        templates:
+          - templateName: backforge-api-rollout-analysis
+      steps:
+        - setWeight: 10
+        - pause:
+            duration: 60s
+        - setWeight: 25
+        - pause:
+            duration: 120s
+        - setWeight: 50
+        - pause:
+            duration: 180s
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backforge-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: backforge
+      annotations:
+        backforge.io/release-sha: latest
+        prometheus.io/path: /metrics
+        prometheus.io/port: "3000"
+        prometheus.io/scrape: "true"
+    spec:
+      serviceAccountName: backforge-runtime
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: backforge-api
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backforge-api
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backforge-api
+      containers:
+        - name: api
+          image: ghcr.io/backforge/backforge:latest
+          imagePullPolicy: Always
+          env:
+            - name: PROCESS_TYPE
+              value: api
+          envFrom:
+            - configMapRef:
+                name: backforge-config
+            - secretRef:
+                name: backforge-secrets
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 24
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000

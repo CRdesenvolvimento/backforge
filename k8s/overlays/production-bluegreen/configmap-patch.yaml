@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backforge-config
+data:
+  APP_URL: https://api.backforge.example.com
+  FEATURE_FLAGS: '{"eventBusV1":true,"rolloutAutomation":true,"canaryDeployments":false,"auditEvents":true}'

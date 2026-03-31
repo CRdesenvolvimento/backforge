@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: backforge-api-rollout-analysis
+  labels:
+    app.kubernetes.io/name: backforge-api
+    app.kubernetes.io/part-of: backforge
+spec:
+  metrics:
+    - name: success-rate
+      interval: 60s
+      count: 3
+      failureLimit: 2
+      successCondition: result[0] >= 0.99
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            (
+              (
+                sum(rate(backforge_http_requests_total{service="backforge",process_type=~"api.*",status_code!~"5.."}[2m]))
+                /
+                clamp_min(sum(rate(backforge_http_requests_total{service="backforge",process_type=~"api.*"}[2m])), 1)
+              )
+            ) or vector(1)
+    - name: p95-latency
+      interval: 60s
+      count: 3
+      failureLimit: 2
+      successCondition: result[0] <= 0.75
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            (
+              histogram_quantile(
+                0.95,
+                sum(rate(backforge_http_request_duration_seconds_bucket{service="backforge",process_type=~"api.*"}[5m])) by (le)
+              )
+            ) or vector(0)

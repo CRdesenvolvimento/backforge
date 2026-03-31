@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: backforge-api
+spec:
+  strategy:
+    blueGreen:
+      activeService: backforge-api
+      previewService: backforge-api-preview
+      autoPromotionEnabled: false
+      previewReplicaCount: 1
+      scaleDownDelaySeconds: 60
+      prePromotionAnalysis:
+        templates:
+          - templateName: backforge-api-rollout-analysis
+      postPromotionAnalysis:
+        templates:
+          - templateName: backforge-api-rollout-analysis

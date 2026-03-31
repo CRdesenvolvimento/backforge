@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: backforge-api
+spec:
+  strategy:
+    canary:
+      stableService: backforge-api
+      canaryService: backforge-api-canary
+      trafficRouting:
+        nginx:
+          stableIngress: backforge-api
+          additionalIngressAnnotations:
+            nginx.ingress.kubernetes.io/canary-by-header: X-Canary
+            nginx.ingress.kubernetes.io/canary-by-header-value: backforge-preview
+      analysis:
+        templates:
+          - templateName: backforge-api-rollout-analysis
+      steps:
+        - setWeight: 10
+        - pause:
+            duration: 60s
+        - analysis:
+            templates:
+              - templateName: backforge-api-rollout-analysis
+        - setWeight: 25
+        - pause:
+            duration: 120s
+        - setWeight: 50
+        - pause:
+            duration: 180s
+        - setWeight: 100
