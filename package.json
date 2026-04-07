@@ -9,7 +9,7 @@
     "build": "npm run prisma:generate && npm run clean && npm run build:server && npm run copy:generated && npm run build:client && npm run copy:entry",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build",
-    "copy:generated": "node -e \"const { cpSync, existsSync } = require('node:fs'); if (existsSync('src/generated/prisma')) { cpSync('src/generated/prisma', 'dist/server/generated/prisma', { recursive: true }); }\"",
+    "copy:generated": "node -e \"const { cpSync, existsSync } = require('node:fs'); if (existsSync('src/generated/prisma-client')) { cpSync('src/generated/prisma-client', 'dist/server/generated/prisma-client', { recursive: true }); }\"",
     "copy:entry": "node -e \"const { mkdirSync, writeFileSync } = require('node:fs'); mkdirSync('dist', { recursive: true }); writeFileSync('dist/server.js', \\\"import './server/server.js';\\\");\"",
     "start": "node dist/server.js",
     "start:worker": "node dist/server/queues/worker.js",
@@ -20,6 +20,9 @@
     "prisma:db:push": "prisma db push",
     "clean": "node -e \"const { rmSync } = require('node:fs'); for (const dir of ['dist/server', 'dist/client', 'dist/server.js']) { try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (error) { if (error && error.code !== 'ENOENT') { console.warn('[clean] could not fully remove ' + dir + ': ' + error.message); } } }\"",
     "lint": "tsc --noEmit"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

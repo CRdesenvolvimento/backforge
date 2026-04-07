@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import { buildApp } from './app.js';
+import { validateRuntimeEnvironment } from './shared/env.js';
 import { logger, serializeError } from './shared/logger.js';
 import { getClusterMetricsSnapshot, getMetricsContentType, registerWorkerMetricsRegistry } from './shared/metrics.js';
 import { isProductionRuntime } from './shared/runtime.js';
@@ -13,9 +14,8 @@ import { isProductionRuntime } from './shared/runtime.js';
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
 
-const API_PREFIXES = ['/api', '/auth', '/growth', '/storage', '/graphql', '/health', '/readyz', '/livez', '/metrics', '/billing-api', '/webhooks'];
-
-process.env.NODE_ENV = isProductionRuntime ? 'production' : 'development';
+const API_PREFIXES = ['/api', '/auth', '/growth', '/graphql', '/health', '/readyz', '/livez', '/metrics', '/billing-api', '/webhooks', '/projects', '/tables', '/rows', '/upload', '/files', '/requests', '/analytics', '/public'];
+validateRuntimeEnvironment();
 
 function isClusterEnabled() {
   return isProductionRuntime && process.env.ENABLE_CLUSTER === 'true';
@@ -88,6 +88,7 @@ async function startHttpServer() {
     await app.register(fastifyStatic, {
       root: distPath,
       prefix: '/',
+      decorateReply: false,
     });
 
     app.setNotFoundHandler((request, reply) => {

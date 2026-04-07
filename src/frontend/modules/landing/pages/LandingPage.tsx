@@ -70,7 +70,7 @@ export function LandingPage() {
                   Live Demo
                 </div>
                 <pre className="overflow-x-auto whitespace-pre-wrap break-all text-sm leading-7">
-                  <code>curl -H "x-api-key: YOUR_KEY" http://localhost:3000/public/data</code>
+                  <code>curl -H "x-api-key: YOUR_KEY" http://localhost:3000/public/sample_items</code>
                 </pre>
               </CardContent>
             </Card>

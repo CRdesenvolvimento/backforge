@@ -10,6 +10,11 @@ declare module 'fastify' {
     cacheKey?: string;
     projectId?: string;
     requestStartTime?: bigint;
+    requestLogContext?: {
+      headers?: Record<string, unknown>;
+      requestBody?: unknown;
+      responseBody?: unknown;
+    };
     userId?: string;
     project?: {
       id: string;

@@ -1,5 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import type { Prisma } from '../../generated/prisma/index.js';
+import type { Prisma } from '../../generated/prisma-client/index.js';
 import { z } from 'zod';
 import { growthService } from './growth.service.js';
 import { trackGrowthEvent } from '../../shared/growth.js';

@@ -1,10 +1,12 @@
 node_modules/
 build/
 dist/
+uploads/
 coverage/
 .DS_Store
 *.log
 src/generated/prisma/
+src/generated/prisma-client/
 .env*
 !.env.example
 .env 

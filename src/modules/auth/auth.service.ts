@@ -4,12 +4,10 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { emitEvent } from '../../events/eventBus.js';
 import { projectService } from '../projects/project.service.js';
+import { getJwtSecret } from '../../shared/env.js';
 import { prisma } from '../../shared/prisma.js';
 import { growthEventNames, trackGrowthEvent } from '../../shared/growth.js';
 import { LoginInput, RegisterInput } from './auth.schema.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || 'refresh-secret';
 
 export class AuthService {
   async register(data: RegisterInput) {
@@ -50,7 +48,7 @@ export class AuthService {
         project: starterWorkspace.project,
         apiKey: starterWorkspace.apiKey.key,
         apiKeyMasked: starterWorkspace.apiKey.maskedKey,
-        endpointPath: '/public/data',
+        endpointPath: `/public/${starterWorkspace.quickstartTableName}`,
         apiKeyHeader: 'x-api-key',
       },
     };
@@ -84,14 +82,14 @@ export class AuthService {
         project: quickstartWorkspace.project,
         apiKey: quickstartWorkspace.apiKey.key,
         apiKeyMasked: quickstartWorkspace.apiKey.maskedKey,
-        endpointPath: '/public/data',
+        endpointPath: `/public/${quickstartWorkspace.quickstartTableName}`,
         apiKeyHeader: 'x-api-key',
       },
     };
   }
 
   async generateTokens(userId: string) {
-    const accessToken = jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: '15m' });
+    const accessToken = jwt.sign({ sub: userId }, getJwtSecret(), { expiresIn: '15m' });
     const refreshToken = uuidv4();
     
     const expiresAt = new Date();

@@ -1,5 +1,7 @@
 import fastify from 'fastify';
-import { Prisma } from './generated/prisma/index.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { Prisma } from './generated/prisma-client/index.js';
 import jwt from '@fastify/jwt';
 import cors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
@@ -7,21 +9,30 @@ import fastifyExpress from '@fastify/express';
 import helmet from 'helmet';
 import multipart from '@fastify/multipart';
 import { ZodError } from 'zod';
+import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
 import { createStripeWebhookRouter } from './modules/billing/stripe-webhook.router.js';
 import { databaseRoutes } from './modules/database/database.routes.js';
+import { databaseService } from './modules/database/database.service.js';
 import { growthRoutes } from './modules/growth/growth.routes.js';
 import { projectRoutes } from './modules/projects/project.routes.js';
+import { requestRoutes } from './modules/requests/request.routes.js';
 import { storageRoutes } from './modules/storage/storage.routes.js';
 import { apiEngineRoutes } from './modules/api-engine/api-engine.routes.js';
 import { publicRoutes } from './modules/public/public.routes.js';
 import { setupGraphQL } from './modules/api-engine/graphql-engine.js';
+import { backfillLegacyApiKeys } from './shared/api-key.js';
+import { getJwtSecret, isProductionEnvironment, validateRuntimeEnvironment } from './shared/env.js';
 import { getHealthSnapshot } from './shared/health.js';
 import { logger, serializeError } from './shared/logger.js';
 import { authenticate } from './shared/middlewares.js';
 import { getMetricsContentType, getMetricsSnapshot, observeHttpRequest } from './shared/metrics.js';
 import { redis } from './shared/redis.js';
+import { sanitizeInput } from './shared/sanitize.js';
+
+const JSON_BODY_LIMIT_BYTES = Number(process.env.JSON_BODY_LIMIT_BYTES ?? 1_048_576);
+const FILE_UPLOAD_LIMIT_BYTES = Number(process.env.FILE_UPLOAD_LIMIT_BYTES ?? 5 * 1024 * 1024);
 
 function getCspDirectiveValues(envKey: string, defaults: string[]) {
   const extraValues = process.env[envKey]
@@ -38,20 +49,57 @@ function getCorsOrigins() {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  return configuredOrigins && configuredOrigins.length > 0 ? configuredOrigins : true;
+  if (configuredOrigins && configuredOrigins.length > 0) {
+    return configuredOrigins;
+  }
+
+  return isProductionEnvironment() ? false : true;
 }
 
 export async function buildApp() {
+  validateRuntimeEnvironment();
+
   const app = fastify({
     trustProxy: true,
     logger: false,
+    bodyLimit: JSON_BODY_LIMIT_BYTES,
   });
+  const uploadsPath = path.resolve(process.cwd(), 'uploads');
+  await fs.mkdir(uploadsPath, { recursive: true });
+
+  try {
+    const backfilledApiKeys = await backfillLegacyApiKeys();
+
+    if (backfilledApiKeys > 0) {
+      logger.info('Backfilled legacy API keys', {
+        count: backfilledApiKeys,
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to backfill legacy API keys on startup', {
+      error: serializeError(error),
+    });
+  }
+
+  try {
+    const backfilledSchemas = await databaseService.backfillLegacySchemas();
+
+    if (backfilledSchemas > 0) {
+      logger.info('Backfilled legacy table schemas', {
+        count: backfilledSchemas,
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to backfill legacy table schemas on startup', {
+      error: serializeError(error),
+    });
+  }
 
   // Plugins
   await app.register(fastifyExpress);
   app.use('/webhooks/stripe', createStripeWebhookRouter());
 
-  if (process.env.NODE_ENV === 'production') {
+  if (isProductionEnvironment()) {
     app.use(
       helmet({
         contentSecurityPolicy: {
@@ -95,11 +143,11 @@ export async function buildApp() {
   });
   await app.register(multipart, {
     limits: {
-      fileSize: 5 * 1024 * 1024, // 5MB limit
+      fileSize: FILE_UPLOAD_LIMIT_BYTES,
     },
   });
   await app.register(jwt, {
-    secret: process.env.JWT_SECRET || 'super-secret',
+    secret: getJwtSecret(),
   });
 
   // Decorators
@@ -107,6 +155,20 @@ export async function buildApp() {
 
   app.addHook('onRequest', async (request) => {
     request.requestStartTime = process.hrtime.bigint();
+  });
+
+  app.addHook('preValidation', async (request) => {
+    if (request.body !== undefined) {
+      request.body = sanitizeInput(request.body);
+    }
+
+    if (request.query !== undefined) {
+      request.query = sanitizeInput(request.query);
+    }
+
+    if (request.params !== undefined) {
+      request.params = sanitizeInput(request.params);
+    }
   });
 
   app.addHook('onResponse', async (request, reply) => {
@@ -130,6 +192,18 @@ export async function buildApp() {
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if ((error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      return reply.status(413).send({
+        error: `JSON payload too large. Limit is ${Math.floor(JSON_BODY_LIMIT_BYTES / 1024)}KB.`,
+      });
+    }
+
+    if ((error as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+      return reply.status(413).send({
+        error: `Uploaded file is too large. Limit is ${Math.floor(FILE_UPLOAD_LIMIT_BYTES / (1024 * 1024))}MB.`,
+      });
+    }
+
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Invalid request payload',
@@ -162,17 +236,19 @@ export async function buildApp() {
       error: serializeError(error),
     });
     return reply.status(500).send({
-      error: error instanceof Error && error.message ? error.message : 'Internal server error',
+      error: 'Internal server error',
     });
   });
 
   // Routes
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(growthRoutes, { prefix: '/growth' });
+  await app.register(analyticsRoutes);
   await app.register(projectRoutes, { prefix: '/projects' });
+  await app.register(requestRoutes);
   await app.register(billingRoutes, { prefix: '/billing-api' });
-  await app.register(databaseRoutes, { prefix: '/database' });
-  await app.register(storageRoutes, { prefix: '/storage' });
+  await app.register(databaseRoutes);
+  await app.register(storageRoutes);
   await app.register(apiEngineRoutes, { prefix: '/api' });
   await app.register(publicRoutes, { prefix: '/public' });
   

@@ -1,10 +1,23 @@
 import { FastifyInstance } from 'fastify';
 import mercurius from 'mercurius';
 import { prisma } from '../../shared/prisma.js';
-import { resolveProjectIdFromApiKey } from '../../shared/api-key.js';
+import { getNodeEnv } from '../../shared/env.js';
+import {
+  captureProjectRequestLogContext,
+  captureProjectResponsePayload,
+  enforceProjectQuota,
+  enforceProjectRateLimit,
+  optionallyAuthenticateProjectUser,
+  recordProjectRequest,
+  requireProjectApiKey,
+} from '../../shared/project-api-access.js';
 import { toProjectSchema, toSqlIdentifier, toSqlIdentifierList } from '../../shared/sql.js';
 
 export async function setupGraphQL(app: FastifyInstance) {
+  if (process.env.ENABLE_GRAPHQL !== 'true') {
+    return;
+  }
+
   const schema = `
     type Query {
       list(table: String!): [JSON]
@@ -43,35 +56,29 @@ export async function setupGraphQL(app: FastifyInstance) {
     }
   };
 
-  await app.register(mercurius, {
-    schema,
-    resolvers,
-    graphiql: true,
-    context: async (request) => {
-      const apiKey = request.headers['x-api-key'];
-      if (typeof apiKey !== 'string' || !apiKey) {
-        throw new Error('API Key required');
-      }
+  await app.register(async (instance) => {
+    instance.addHook('preHandler', requireProjectApiKey);
+    instance.addHook('preHandler', optionallyAuthenticateProjectUser);
+    instance.addHook('preHandler', captureProjectRequestLogContext);
+    instance.addHook('preHandler', enforceProjectQuota);
+    instance.addHook('preHandler', enforceProjectRateLimit);
+    instance.addHook('onSend', captureProjectResponsePayload);
+    instance.addHook('onResponse', recordProjectRequest);
 
-      const projectId = await resolveProjectIdFromApiKey(apiKey);
-      if (!projectId) {
-        throw new Error('Invalid API Key');
-      }
-
-      let userId: string | undefined;
-      if (request.headers.authorization) {
-        try {
-          await request.jwtVerify();
-          userId = (request.user as any).sub;
-        } catch (error) {
-          throw new Error('Invalid authorization token');
+    await instance.register(mercurius, {
+      schema,
+      resolvers,
+      graphiql: getNodeEnv() !== 'production',
+      context: async (request) => {
+        if (!request.projectId) {
+          throw new Error('Invalid API key');
         }
-      }
 
-      return {
-        projectId,
-        userId,
-      };
-    }
+        return {
+          projectId: request.projectId,
+          userId: request.userId,
+        };
+      },
+    });
   });
 }

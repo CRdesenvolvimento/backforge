@@ -1,5 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { Prisma } from '../../generated/prisma/index.js';
+import { Prisma } from '../../generated/prisma-client/index.js';
 import { AuthService } from './auth.service.js';
 import { loginSchema, refreshSchema, registerSchema } from './auth.schema.js';
 

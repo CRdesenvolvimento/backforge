@@ -1,18 +1,14 @@
 import { FastifyInstance } from 'fastify';
-import { StorageController } from './storage.controller.js';
 import { roleMiddleware } from '../../shared/middlewares.js';
+import { storageController } from './storage.controller.js';
 
 export async function storageRoutes(app: FastifyInstance) {
-  const controller = new StorageController();
-
   app.register(async (instance) => {
     instance.addHook('preHandler', instance.authenticate);
-    // Multi-tenant RBAC check: only owner, admin, developer can access storage
     instance.addHook('preHandler', roleMiddleware(['OWNER', 'ADMIN', 'DEVELOPER']));
 
-    instance.post('/upload', controller.upload);
-    instance.get('/file/:filename', controller.getUrl);
-    instance.delete('/file/:filename', controller.delete);
-    instance.get('/list', controller.list);
+    instance.post('/upload', storageController.upload);
+    instance.get('/files', storageController.list);
+    instance.delete('/files/:id', storageController.delete);
   });
 }

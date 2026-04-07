@@ -1,10 +1,12 @@
-import { Role } from '../../generated/prisma/index.js';
+import { Role } from '../../generated/prisma-client/index.js';
 import { getNextBillingPeriodEnd, getNextBillingPeriodStart, getPlanConfig, normalizePlanKey } from '../../config/plans.js';
 import { platformEvents } from '../../events/catalog.js';
 import { emitEvent } from '../../events/eventBus.js';
+import { getApiKeyPreview, hashApiKey, maskApiKey } from '../../shared/api-key.js';
 import { prisma } from '../../shared/prisma.js';
 import { growthEventNames, trackGrowthEvent } from '../../shared/growth.js';
 import { generateApiKey } from '../../utils/generateApiKey.js';
+import { databaseService } from '../database/database.service.js';
 
 const PROJECT_WRITE_ROLES: Role[] = ['OWNER', 'ADMIN'];
 const PROJECT_DELETE_ROLES: Role[] = ['OWNER'];
@@ -38,14 +40,6 @@ function projectMembershipFilter(userId: string, allowedRoles?: Role[]) {
       ...(allowedRoles ? { role: { in: allowedRoles } } : {}),
     },
   };
-}
-
-function maskApiKey(key: string) {
-  if (key.length <= 12) {
-    return key;
-  }
-
-  return `${key.slice(0, 8)}...${key.slice(-4)}`;
 }
 
 export const projectService = {
@@ -106,6 +100,7 @@ export const projectService = {
 
   async createStarterWorkspace(userId: string, projectName = 'My First Project') {
     const project = await this.create(userId, projectName);
+    const quickstartTableName = await databaseService.ensureStarterTable(project.id);
     const apiKey = await this.createApiKey(userId, project.id, 'Getting Started Key');
 
     if (!apiKey) {
@@ -115,6 +110,7 @@ export const projectService = {
     return {
       project,
       apiKey,
+      quickstartTableName,
     };
   },
 
@@ -132,18 +128,6 @@ export const projectService = {
         slug: true,
         createdAt: true,
         updatedAt: true,
-        apiKeys: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 1,
-          select: {
-            id: true,
-            name: true,
-            key: true,
-            createdAt: true,
-          },
-        },
       },
     });
 
@@ -151,22 +135,7 @@ export const projectService = {
       return this.createStarterWorkspace(userId);
     }
 
-    if (project.apiKeys[0]) {
-      return {
-        project: {
-          id: project.id,
-          name: project.name,
-          slug: project.slug,
-          createdAt: project.createdAt,
-          updatedAt: project.updatedAt,
-        },
-        apiKey: {
-          ...project.apiKeys[0],
-          maskedKey: maskApiKey(project.apiKeys[0].key),
-        },
-      };
-    }
-
+    const quickstartTableName = await databaseService.ensureStarterTable(project.id);
     const apiKey = await this.createApiKey(userId, project.id, 'Getting Started Key');
 
     if (!apiKey) {
@@ -182,6 +151,7 @@ export const projectService = {
         updatedAt: project.updatedAt,
       },
       apiKey,
+      quickstartTableName,
     };
   },
 
@@ -279,6 +249,7 @@ export const projectService = {
           select: {
             id: true,
             name: true,
+            keyPreview: true,
             createdAt: true,
           },
           orderBy: {
@@ -306,6 +277,10 @@ export const projectService = {
 
     return {
       ...projectData,
+      apiKeys: projectData.apiKeys.map(({ keyPreview, ...apiKey }) => ({
+        ...apiKey,
+        maskedKey: getApiKeyPreview({ keyPreview }),
+      })),
       subscription: projectData.subscription
         ? {
             ...projectData.subscription,
@@ -395,16 +370,18 @@ export const projectService = {
       where: { projectId },
     });
     const apiKeyName = name.trim() || `Key ${currentKeyCount + 1}`;
+    const apiKey = generateApiKey();
     const apiKeyRecord = await prisma.apiKey.create({
       data: {
         name: apiKeyName,
-        key: generateApiKey(),
+        keyHash: hashApiKey(apiKey),
+        keyPreview: maskApiKey(apiKey),
         projectId,
       },
       select: {
         id: true,
         name: true,
-        key: true,
+        keyPreview: true,
         createdAt: true,
       },
     });
@@ -420,7 +397,8 @@ export const projectService = {
 
     return {
       ...apiKeyRecord,
-      maskedKey: maskApiKey(apiKeyRecord.key),
+      key: apiKey,
+      maskedKey: getApiKeyPreview(apiKeyRecord),
     };
   },
 
@@ -447,14 +425,14 @@ export const projectService = {
       select: {
         id: true,
         name: true,
-        key: true,
+        keyPreview: true,
         createdAt: true,
       },
     });
 
-    return apiKeys.map(({ key, ...apiKey }) => ({
+    return apiKeys.map(({ keyPreview, ...apiKey }) => ({
       ...apiKey,
-      maskedKey: maskApiKey(key),
+      maskedKey: getApiKeyPreview({ keyPreview }),
     }));
   },
 
@@ -484,6 +462,7 @@ export const projectService = {
         path: true,
         method: true,
         status: true,
+        latency: true,
         createdAt: true,
       },
     });

@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  output   = "../src/generated/prisma-client"
 }
 
 datasource db {
@@ -39,6 +39,7 @@ model Project {
   apiKeys      ApiKey[]
   requestLogs  RequestLog[]
   tables       DatabaseTable[]
+  files        StoredFile[]
   subscription Subscription?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -74,27 +75,38 @@ model Session {
 }
 
 model ApiKey {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  name      String
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  key        String?  @unique
+  keyHash    String?  @unique
+  keyPreview String?
+  name       String
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 
   @@index([projectId])
+  @@index([projectId, createdAt])
   @@map("api_keys")
 }
 
 model RequestLog {
-  id        String   @id @default(uuid())
-  projectId String
-  path      String
-  method    String
-  status    Int
-  createdAt DateTime @default(now())
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  projectId    String
+  path         String
+  method       String
+  status       Int
+  latency      Int      @default(0)
+  requestBody  Json?
+  responseBody Json?
+  headers      Json?
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([projectId])
+  @@index([createdAt])
   @@index([projectId, createdAt])
+  @@index([projectId, status, createdAt])
+  @@index([projectId, path, createdAt])
   @@map("request_logs")
 }
 
@@ -104,9 +116,13 @@ model DatabaseTable {
   projectId String
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   columns   DatabaseColumn[]
+  schema    Json?
+  rows      DatabaseRow[]
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
+  @@index([projectId])
+  @@index([createdAt])
   @@unique([projectId, name])
   @@map("database_tables")
 }
@@ -114,12 +130,42 @@ model DatabaseTable {
 model DatabaseColumn {
   id        String        @id @default(uuid())
   name      String
-  type      String        
+  type      String
   required  Boolean       @default(false)
   tableId   String
   table     DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
   @@map("database_columns")
+}
+
+model DatabaseRow {
+  id        String        @id @default(uuid())
+  tableId   String
+  data      Json
+  createdAt DateTime      @default(now())
+  table     DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId])
+  @@index([createdAt])
+  @@index([tableId, createdAt])
+  @@map("database_rows")
+}
+
+model StoredFile {
+  id           String   @id @default(uuid())
+  projectId    String
+  filename     String   @unique
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@index([projectId, createdAt])
+  @@map("stored_files")
 }
 
 model Subscription {

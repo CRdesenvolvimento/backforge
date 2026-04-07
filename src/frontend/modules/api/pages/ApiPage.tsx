@@ -27,10 +27,26 @@ interface CreatedApiKey extends ApiKeyRecord {
 
 interface RequestLogRecord {
   id: string;
+  projectId?: string;
   path: string;
   method: string;
   status: number;
+  latency: number;
   createdAt: string;
+}
+
+interface PaginatedRequestLogs {
+  data: RequestLogRecord[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+  };
+}
+
+interface TableRecord {
+  id: string;
+  name: string;
 }
 
 const selectClassName =
@@ -83,10 +99,28 @@ export function ApiPage() {
   });
 
   const logsQuery = useQuery<RequestLogRecord[]>({
-    queryKey: ['project-logs', selectedProjectId],
+    queryKey: ['requests', selectedProjectId],
     enabled: Boolean(selectedProjectId),
     queryFn: async () => {
-      const response = await api.get(`/projects/${selectedProjectId}/logs?limit=25`);
+      const response = await api.get<PaginatedRequestLogs>('/requests', {
+        params: {
+          projectId: selectedProjectId,
+          limit: 25,
+        },
+      });
+      return response.data.data;
+    },
+  });
+
+  const tablesQuery = useQuery<TableRecord[]>({
+    queryKey: ['tables', selectedProjectId],
+    enabled: Boolean(selectedProjectId),
+    queryFn: async () => {
+      const response = await api.get('/tables', {
+        params: {
+          projectId: selectedProjectId,
+        },
+      });
       return response.data;
     },
   });
@@ -133,6 +167,8 @@ export function ApiPage() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0];
   const canManageKeys = selectedProject.role === 'OWNER' || selectedProject.role === 'ADMIN';
+  const publicTableName = tablesQuery.data?.[0]?.name ?? 'sample_items';
+  const publicEndpointPreview = `curl http://localhost:3000/public/${publicTableName} \\`;
 
   const handleCreateKey = () => {
     if (!selectedProjectId) {
@@ -223,7 +259,7 @@ export function ApiPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="rounded-lg border bg-background/70 p-4 font-mono text-sm text-muted-foreground">
-              <div>curl http://localhost:3000/public/data \</div>
+              <div>{publicEndpointPreview}</div>
               <div>-H "x-api-key: YOUR_KEY"</div>
             </div>
             <div className="rounded-lg border bg-background/70 p-4">
@@ -309,6 +345,7 @@ export function ApiPage() {
                       </span>
                     </div>
                     <div className="font-mono text-sm text-muted-foreground">{log.path}</div>
+                    <div className="text-xs text-muted-foreground">{log.latency}ms latency</div>
                   </div>
                   <div className="text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</div>
                 </div>

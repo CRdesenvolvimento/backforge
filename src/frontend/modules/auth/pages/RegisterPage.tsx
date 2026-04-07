@@ -16,7 +16,7 @@ function getOnboardingPayload(payload: any) {
       project: payload.project,
       apiKey: payload.apiKey,
       apiKeyMasked: payload.apiKey,
-      endpointPath: '/public/data',
+      endpointPath: '/public/sample_items',
       apiKeyHeader: 'x-api-key',
     };
   }

@@ -1,28 +1,19 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { resolveProjectAccessFromApiKey } from '../shared/api-key.js';
 import { prisma } from '../shared/prisma.js';
-import { safeRedis } from '../shared/redis.js';
 
 export class GatewayController {
   async validateRequest(request: FastifyRequest, reply: FastifyReply) {
     const apiKey = request.headers['x-api-key'] as string;
     if (!apiKey) return reply.status(401).send({ error: 'API Key required' });
 
-    // Cache lookup for API Key
-    const cachedProject = await safeRedis.get(`apikey:${apiKey}`);
-    let projectId: string;
+    const project = await resolveProjectAccessFromApiKey(apiKey);
 
-    if (cachedProject) {
-      projectId = cachedProject;
-    } else {
-      const keyData = await prisma.apiKey.findUnique({
-        where: { key: apiKey },
-        include: { project: { include: { subscription: true } } },
-      });
-
-      if (!keyData) return reply.status(401).send({ error: 'Invalid API Key' });
-      projectId = keyData.projectId;
-      await safeRedis.set(`apikey:${apiKey}`, projectId, 'EX', 3600);
+    if (!project) {
+      return reply.status(401).send({ error: 'Invalid API Key' });
     }
+
+    const projectId = project.id;
 
     // Attach project info to request
     (request as any).projectId = projectId;

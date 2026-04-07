@@ -1,4 +1,4 @@
-import { PrismaClient } from '../generated/prisma/index.js';
+import { PrismaClient } from '../generated/prisma-client/index.js';
 
 export class TenantDatabaseService {
   private static clients: Map<string, PrismaClient> = new Map();

@@ -1,4 +1,4 @@
-import type { Prisma } from '../generated/prisma/index.js';
+import type { Prisma } from '../generated/prisma-client/index.js';
 import { prisma } from './prisma.js';
 import { logger, serializeError } from './logger.js';
 

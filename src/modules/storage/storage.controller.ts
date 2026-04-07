@@ -3,40 +3,53 @@ import { StorageService } from './storage.service.js';
 
 const storageService = new StorageService();
 
-export class StorageController {
+function getTenantProjectId(request: FastifyRequest) {
+  return request.tenant?.projectId;
+}
+
+export const storageController = {
   async upload(request: FastifyRequest, reply: FastifyReply) {
     const data = await request.file();
+
     if (!data) {
       return reply.status(400).send({ error: 'No file uploaded' });
     }
 
-    const { projectId } = (request as any).tenant;
+    const projectId = getTenantProjectId(request);
+
+    if (!projectId) {
+      return reply.status(400).send({ error: 'Project context missing' });
+    }
+
     const result = await storageService.uploadFile(projectId, data);
-    
     return reply.status(201).send(result);
-  }
-
-  async getUrl(request: FastifyRequest, reply: FastifyReply) {
-    const { filename } = request.params as { filename: string };
-    const { projectId } = (request as any).tenant;
-    const key = `${projectId}/uploads/${filename}`;
-
-    const url = await storageService.getFileUrl(key);
-    return reply.send({ url });
-  }
-
-  async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { filename } = request.params as { filename: string };
-    const { projectId } = (request as any).tenant;
-    const key = `${projectId}/uploads/${filename}`;
-
-    await storageService.deleteFile(key);
-    return reply.status(204).send();
-  }
+  },
 
   async list(request: FastifyRequest, reply: FastifyReply) {
-    const { projectId } = (request as any).tenant;
+    const projectId = getTenantProjectId(request);
+
+    if (!projectId) {
+      return reply.status(400).send({ error: 'Project context missing' });
+    }
+
     const files = await storageService.listFiles(projectId);
     return reply.send(files);
-  }
-}
+  },
+
+  async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const projectId = getTenantProjectId(request);
+
+    if (!projectId) {
+      return reply.status(400).send({ error: 'Project context missing' });
+    }
+
+    const deleted = await storageService.deleteFile(projectId, id);
+
+    if (!deleted) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    return reply.status(204).send();
+  },
+};
