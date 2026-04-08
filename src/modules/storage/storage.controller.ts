@@ -1,7 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { StorageService } from './storage.service.js';
-
-const storageService = new StorageService();
+import { storageService } from './storage.service.js';
 
 function getTenantProjectId(request: FastifyRequest) {
   return request.tenant?.projectId;

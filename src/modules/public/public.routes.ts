@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { storageService } from '../storage/storage.service.js';
 import { z } from 'zod';
 import { databaseService } from '../database/database.service.js';
 import {
@@ -39,14 +40,16 @@ export async function publicRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'File not found' });
     }
 
-    const filePath = path.join(uploadsRoot, storedFile.filename);
-
     try {
-      await fsPromises.access(filePath);
+      const stream = await storageService.getFile(storedFile.filename);
+      if (!stream) {
+        return reply.status(404).send({ error: 'File not found' });
+      }
+
       reply.header('X-Content-Type-Options', 'nosniff');
-      reply.header("Content-Type", "application/octet-stream");
+      reply.header("Content-Type", storedFile.mimeType || "application/octet-stream");
       reply.header("Content-Disposition", "attachment");
-      return reply.send(fs.createReadStream(filePath));
+      return reply.send(stream);
     } catch {
       return reply.status(404).send({ error: 'File not found' });
     }

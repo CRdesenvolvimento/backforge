@@ -1,8 +1,12 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { MultipartFile } from '@fastify/multipart';
 import { prisma } from '../../shared/prisma.js';
+import { getS3Config } from '../../shared/env.js';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Readable } from 'node:stream';
 
 const uploadsRoot = path.resolve(process.cwd(), 'uploads');
 const DEFAULT_PUBLIC_MIME_TYPE = 'application/octet-stream';
@@ -59,20 +63,44 @@ export function getPublicFileResponseMetadata(mimeType: string | null | undefine
 }
 
 async function ensureUploadsDirectory() {
-  await fs.mkdir(uploadsRoot, { recursive: true });
+  await fsPromises.mkdir(uploadsRoot, { recursive: true });
 }
 
-export class StorageService {
-  async uploadFile(projectId: string, file: MultipartFile) {
-    await ensureUploadsDirectory();
 
+export class StorageService {
+  private s3Client: S3Client | null = null;
+  private s3Bucket: string | null = null;
+
+  constructor() {
+    const s3Config = getS3Config();
+    if (s3Config) {
+      const { bucket, ...clientConfig } = s3Config;
+      this.s3Client = new S3Client(clientConfig);
+      this.s3Bucket = bucket;
+    }
+  }
+
+  async uploadFile(projectId: string, file: MultipartFile) {
     const originalName = sanitizeOriginalName(file.filename);
     const extension = sanitizeExtension(originalName);
     const storedFilename = `${Date.now()}-${crypto.randomUUID()}${extension}`;
-    const destinationPath = path.join(uploadsRoot, storedFilename);
     const buffer = await file.toBuffer();
+    const mimeType = getStoredFileMimeType(file.mimetype);
 
-    await fs.writeFile(destinationPath, buffer);
+    if (this.s3Client && this.s3Bucket) {
+      await this.s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.s3Bucket,
+          Key: storedFilename,
+          Body: buffer,
+          ContentType: mimeType,
+        })
+      );
+    } else {
+      await ensureUploadsDirectory();
+      const destinationPath = path.join(uploadsRoot, storedFilename);
+      await fsPromises.writeFile(destinationPath, buffer);
+    }
 
     const createdFile = await prisma.storedFile.create({
       data: {
@@ -117,6 +145,30 @@ export class StorageService {
     });
   }
 
+  async getFile(filename: string): Promise<Readable | null> {
+    if (this.s3Client && this.s3Bucket) {
+      try {
+        const response = await this.s3Client.send(
+          new GetObjectCommand({
+            Bucket: this.s3Bucket,
+            Key: filename,
+          })
+        );
+        return response.Body as Readable;
+      } catch {
+        return null;
+      }
+    }
+
+    const filePath = path.join(uploadsRoot, filename);
+    try {
+      await fsPromises.access(filePath);
+      return fs.createReadStream(filePath) as unknown as Readable;
+    } catch {
+      return null;
+    }
+  }
+
   async deleteFile(projectId: string, fileId: string) {
     const existingFile = await prisma.storedFile.findFirst({
       where: {
@@ -139,10 +191,23 @@ export class StorageService {
       },
     });
 
-    try {
-      await fs.unlink(path.join(uploadsRoot, existingFile.filename));
-    } catch {
-      return true;
+    if (this.s3Client && this.s3Bucket) {
+      try {
+        await this.s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: this.s3Bucket,
+            Key: existingFile.filename,
+          })
+        );
+      } catch {
+        // Silently continue if S3 delete fails
+      }
+    } else {
+      try {
+        await fsPromises.unlink(path.join(uploadsRoot, existingFile.filename));
+      } catch {
+        // Silently continue if local delete fails
+      }
     }
 
     return true;
@@ -152,3 +217,5 @@ export class StorageService {
     return uploadsRoot;
   }
 }
+
+export const storageService = new StorageService();

@@ -4,6 +4,9 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm run start"
+    "startCommand": "npm run prisma:migrate:deploy && npm run start",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 120
   }
 }
+

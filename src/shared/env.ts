@@ -91,3 +91,25 @@ export function validateRuntimeEnvironment() {
 
   hasValidatedRuntimeEnvironment = true;
 }
+
+export function getS3Config() {
+  const region = process.env.S3_REGION || 'us-east-1';
+  const endpoint = process.env.S3_ENDPOINT;
+  const accessKeyId = process.env.S3_ACCESS_KEY;
+  const secretAccessKey = process.env.S3_SECRET_KEY;
+  const bucket = process.env.S3_BUCKET || 'backforge-storage';
+
+  if (!accessKeyId || !secretAccessKey) {
+    return null;
+  }
+
+  return {
+    region,
+    endpoint,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+    bucket,
+  };
+}
